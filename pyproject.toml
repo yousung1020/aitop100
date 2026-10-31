@@ -1,0 +1,22 @@
+[project]
+name = "gyodong-cs"
+version = "0.1.0"
+description = "2037 AI TOP 100 교동마을 산지직송 CS 에이전트"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.29.0",
+    "pydantic>=2.6.0",
+    "google-genai>=0.1.0",
+    "httpx>=0.27.0",
+    "python-dotenv>=1.0.0",
+    "pytest>=8.0.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
