@@ -94,9 +94,9 @@ async def health_check():
     return {"status": "ok", "version": "2.0"}
 
 
-@app.post("/skill", response_model=KakaoSkillResponse)
-@app.post("/skill/cs", response_model=KakaoSkillResponse)
-@app.post("/api/kakao/chat", response_model=KakaoSkillResponse)
+@app.post("/skill", response_model=KakaoSkillResponse, response_model_exclude_none=True)
+@app.post("/skill/cs", response_model=KakaoSkillResponse, response_model_exclude_none=True)
+@app.post("/api/kakao/chat", response_model=KakaoSkillResponse, response_model_exclude_none=True)
 async def handle_skill_webhook(request: Request, payload: KakaoPayload) -> KakaoSkillResponse:
     """카카오 i 오픈빌더 스킬 웹훅 엔드포인트.
 
