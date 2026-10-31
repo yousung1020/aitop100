@@ -77,6 +77,7 @@ class MockActionHandler:
                 "customer_name": "임태경",
                 "recipient_name": "임태경",
                 "payment_method": "BANK_TRANSFER",
+                "payment_refs": ["PAY-3706-0003"],
                 "approval_no": "PAY-3706-0003",
                 "status": "PAID",
                 "shipped": True,

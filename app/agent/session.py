@@ -24,6 +24,7 @@ class ConversationState:
     incoming_account: Optional[Dict[str, Any]] = None  # {"name": "...", "phone": "...", "member_id": "..."}
     consultation_date: Optional[str] = None
     temp_data: Dict[str, Any] = field(default_factory=dict)
+    pending_address: Optional[str] = None
     last_updated: float = field(default_factory=time.time)
 
     def set_flow(self, flow: str, order_no: Optional[str] = None, **kwargs) -> None:
@@ -38,7 +39,15 @@ class ConversationState:
         """현재 진행 중인 업무 플로우 및 임시 데이터 초기화."""
         self.current_flow = None
         self.order_no = None
+        self.pending_address = None
         self.temp_data.clear()
+        self.last_updated = time.time()
+
+    def reset_for_new_tc(self, new_tc_id: Optional[str] = None) -> None:
+        """TC 전환 시 이전 세션 상태(주문번호, 플로우, 임시데이터, 주소, 대화이력) 완전 격리 및 초기화."""
+        self.clear_flow()
+        self.history.clear()
+        self.test_case_id = new_tc_id
         self.last_updated = time.time()
 
     def add_history(self, role: str, content: str) -> None:

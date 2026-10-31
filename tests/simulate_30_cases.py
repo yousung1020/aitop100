@@ -64,6 +64,19 @@ OPENAPI_BODY_SCHEMAS: Dict[str, Dict[str, Any]] = {
     },
 }
 
+OPENAPI_ALLOWED_QUERY_PARAMS: Dict[str, List[str]] = {
+    r"^/api/products$": ["item"],
+    r"^/api/tickets$": ["member_id", "lot_id"],
+    r"^/api/orders$": ["member_id", "inflow_tag"],
+    r"^/api/shipments$": ["order_no"],
+    r"^/api/members$": ["name", "referred_by"],
+    r"^/api/point-entries$": ["member_id"],
+    r"^/api/coupons$": ["member_id"],
+    r"^/api/payments$": ["order_no"],
+    r"^/api/inventory$": ["sku"],
+    r"^/api/refunds$": ["order_no"],
+}
+
 
 @dataclass
 class ExpectedApiCall:
@@ -197,10 +210,45 @@ def verify_http_contract(
                             f"호출 #{idx+1} ({method} {path}): OpenAPI 스키마에 정의되지 않은 임의 본문 필드 검출 ({disallowed_keys})"
                         )
 
-    # 2. 기대 API 호출 일치 검사
-    for exp in expected_calls:
-        matched = False
-        for req in actual_history:
+        # 1-4. 공식 미지원 query 파라미터 검증
+        actual_query = req.get("query", {})
+        if actual_query:
+            query_allowed = None
+            for pattern, allowed_q in OPENAPI_ALLOWED_QUERY_PARAMS.items():
+                if re.match(pattern, path):
+                    query_allowed = allowed_q
+                    break
+            if query_allowed is None:
+                errors.append(
+                    f"호출 #{idx+1} ({method} {path}): 공식 미지원 query 파라미터 검출 (경로 자체 query 미지원: {list(actual_query.keys())})"
+                )
+            else:
+                unsupported_q = set(actual_query.keys()) - set(query_allowed)
+                if unsupported_q:
+                    errors.append(
+                        f"호출 #{idx+1} ({method} {path}): 공식 미지원 query 파라미터 검출 ({unsupported_q})"
+                    )
+
+    # 1-5. 불필요한 추가 액션(미승인 쿠폰 발급, 미승인 환불, 미승인 쓰기 등) 검출
+    for idx, req in enumerate(actual_history):
+        method = req.get("method", "").upper()
+        path = req.get("path", "")
+        if method in ("POST", "PUT", "PATCH", "DELETE"):
+            is_authorized = any(
+                exp.method.upper() == method and exp.path == path
+                for exp in expected_calls
+            )
+            if not is_authorized:
+                errors.append(
+                    f"호출 #{idx+1} ({method} {path}): 사전 승인되지 않은 불필요한 추가 쓰기 액션 호출 검출"
+                )
+
+    # 2. 기대 API 호출 일치 및 호출 순서(sequence) 엄격 검사
+    last_matched_idx = -1
+    for exp_idx, exp in enumerate(expected_calls):
+        matched_idx = -1
+        for act_idx in range(last_matched_idx + 1, len(actual_history)):
+            req = actual_history[act_idx]
             if req.get("method", "").upper() != exp.method.upper():
                 continue
             if req.get("path") != exp.path:
@@ -216,16 +264,43 @@ def verify_http_contract(
                 if not all(actual_body.get(k) == v for k, v in exp.body.items()):
                     continue
 
-            matched = True
+            matched_idx = act_idx
             break
 
-        if not matched:
-            detail = f"{exp.method} {exp.path}"
-            if exp.query:
-                detail += f" (query: {exp.query})"
-            if exp.body:
-                detail += f" (body: {exp.body})"
-            errors.append(f"기대 API 호출 미수행: {detail}")
+        detail = f"{exp.method} {exp.path}"
+        if exp.query:
+            detail += f" (query: {exp.query})"
+        if exp.body:
+            detail += f" (body: {exp.body})"
+
+        if matched_idx != -1:
+            last_matched_idx = matched_idx
+        else:
+            # 혹시 이전 인덱스에서 매칭된 적이 있는지 검사하여 순서 역전 여부 확인
+            reversed_found = False
+            for act_idx in range(0, last_matched_idx + 1):
+                req = actual_history[act_idx]
+                if req.get("method", "").upper() != exp.method.upper():
+                    continue
+                if req.get("path") != exp.path:
+                    continue
+                if exp.query is not None:
+                    actual_query = req.get("query", {})
+                    if not all(actual_query.get(k) == v for k, v in exp.query.items()):
+                        continue
+                if exp.body is not None:
+                    actual_body = req.get("body", {})
+                    if not all(actual_body.get(k) == v for k, v in exp.body.items()):
+                        continue
+                reversed_found = True
+                break
+
+            if reversed_found:
+                errors.append(
+                    f"호출 순서(sequence) 위반: 기대 호출 #{exp_idx+1} ({detail})이 이전 호출보다 먼저 또는 역전되어 실행되었습니다."
+                )
+            else:
+                errors.append(f"기대 API 호출 미수행: {detail}")
 
     return len(errors) == 0, errors
 
@@ -299,6 +374,80 @@ def test_mutation_probes_detection():
         expected_tc_id="L-47",
     )
     assert not passed_4, "변이 탐침 4 (금지 액션) 검출 실패"
+
+    # 탐침 5: 호출 순서 역전 변이 (Sequence Reversal)
+    probe_5_history = [
+        {
+            "method": "POST",
+            "path": "/api/orders/100100003/address-change-requests",
+            "headers": {"x-aitop100-test-case-id": "L-03"},
+            "body": {"new_address": "경기 성남시 판교역로 166 8층"},
+            "query": {},
+        },
+        {
+            "method": "GET",
+            "path": "/api/shipments",
+            "headers": {"x-aitop100-test-case-id": "L-03"},
+            "body": {},
+            "query": {"order_no": "100100003"},
+        },
+    ]
+    passed_5, errors_5 = verify_http_contract(
+        probe_5_history,
+        expected_calls=[
+            ExpectedApiCall(method="GET", path="/api/shipments", query={"order_no": "100100003"}),
+            ExpectedApiCall(method="POST", path="/api/orders/100100003/address-change-requests", body={"new_address": "경기 성남시 판교역로 166 8층"}),
+        ],
+        forbidden_calls=[],
+        expected_tc_id="L-03",
+    )
+    assert not passed_5, "변이 탐침 5 (호출 순서 역전) 검출 실패"
+    assert any("호출 순서(sequence) 위반" in e for e in errors_5), "변이 탐침 5 순서 위반 메시지 누락"
+
+    # 탐침 6: 불필요한 미승인 추가 쓰기 액션 주입
+    probe_6_history = [
+        {
+            "method": "GET",
+            "path": "/api/orders/100100005",
+            "headers": {"x-aitop100-test-case-id": "L-05"},
+            "body": {},
+            "query": {},
+        },
+        {
+            "method": "POST",
+            "path": "/api/refunds",
+            "headers": {"x-aitop100-test-case-id": "L-05"},
+            "body": {"order_no": "100100005", "amount": 10000, "reason": "미승인환불"},
+            "query": {},
+        },
+    ]
+    passed_6, errors_6 = verify_http_contract(
+        probe_6_history,
+        expected_calls=[ExpectedApiCall(method="GET", path="/api/orders/100100005")],
+        forbidden_calls=[],
+        expected_tc_id="L-05",
+    )
+    assert not passed_6, "변이 탐침 6 (미승인 쓰기 액션) 검출 실패"
+    assert any("사전 승인되지 않은 불필요한 추가 쓰기 액션" in e for e in errors_6), "변이 탐침 6 미승인 액션 메시지 누락"
+
+    # 탐침 7: 공식 미지원 query 파라미터 주입
+    probe_7_history = [
+        {
+            "method": "GET",
+            "path": "/api/orders/100100005",
+            "headers": {"x-aitop100-test-case-id": "L-05"},
+            "body": {},
+            "query": {"unsupported_query": "hack"},
+        },
+    ]
+    passed_7, errors_7 = verify_http_contract(
+        probe_7_history,
+        expected_calls=[ExpectedApiCall(method="GET", path="/api/orders/100100005")],
+        forbidden_calls=[],
+        expected_tc_id="L-05",
+    )
+    assert not passed_7, "변이 탐침 7 (공식 미지원 query) 검출 실패"
+    assert any("공식 미지원 query 파라미터 검출" in e for e in errors_7), "변이 탐침 7 미지원 query 메시지 누락"
 
 
 # ==============================================================================
@@ -899,9 +1048,9 @@ async def main():
     print("=" * 80)
     print(" 🚀 [교동마을 산지직송] 30개 심사위원 페르소나 모의 시뮬레이션 및 전수 검증 하네스")
     print("=" * 80)
-    print(" 📌 [P1 사전 검증] OpenAPI 3.1.0 변이 탐침(메서드 변조, 본문 오염, 헤더 변조) 자가 검출 실행...")
+    print(" 📌 [P1 사전 검증] OpenAPI 3.1.0 변이 탐침(메서드 변조, 본문 오염, 헤더 변조, 시퀀스 역전, 미승인 액션, 미지원 쿼리) 자가 검출 실행...")
     test_mutation_probes_detection()
-    print(" ✅ 변이 탐침 자가 검증 통과: 계약 위반 4종 모두 100% 정상 FAIL 검출 확인 완료!")
+    print(" ✅ 변이 탐침 자가 검증 통과: 계약 위반 및 시퀀스/미승인 액션/미지원 쿼리 7종 모두 100% 정상 FAIL 검출 확인 완료!")
     print("-" * 80)
     print(f" 총 평가 대상: {len(CASES)}개 케이스 (공개 TC 15건 + 예상 심사 시나리오 15건)")
     print("-" * 80)

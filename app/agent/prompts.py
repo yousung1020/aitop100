@@ -108,6 +108,8 @@ def get_rule_based_response(
         if action_result:
             status = action_result.get("status")
             order_id = action_result.get("order_id", "해당 주문")
+            if status == "CANCELLED":
+                return "주소 변경 요청이 취소되었습니다. 기존 배송지로 발송됩니다."
             if status == "SHIPMENT_CHECK_FAILED":
                 return (
                     f"고객님, 주문번호 {order_id} 건의 배송 상태를 확인할 수 없어 배송지 변경 접수가 불가합니다. "
@@ -356,6 +358,13 @@ def get_rule_based_response(
                 f"고객님, 주문번호 {order_id} 건은 로그인하신 계정 본인의 주문이 아닌 타인의 주문입니다. "
                 "개인정보 보호 규정상 타인의 주문 정보(배송 상태, 수령인 주소 등)는 제공하지 않는 항목입니다. "
                 "본 건은 사내 규정에 따라 CS 담당자 확인(LANE2)으로 이관 접수되었습니다."
+            )
+        if category == PolicyCategory.PRIVACY_SELLER_INFO or "판매자" in utterance:
+            return (
+                "고객님, 교동마을 산지직송의 공식 판매자 사업자 공시 정보(상호, 대표자명, 사업자등록번호, 사업장 주소, 대표 연락처 등)는 "
+                "쇼핑몰 공식 홈페이지 하단 사업자 정보 공시란을 통해 투명하게 확인하실 수 있습니다. "
+                "다만 대표자 개인 사생활 및 가족관계, 개별 생산 농가 및 어촌계의 사적 연락처와 계약 조건 등 비공시 내부 정보는 "
+                "개인정보 보호 및 영업비밀 보호 규정에 따라 '제공하지 않는 항목'입니다."
             )
         if category == PolicyCategory.PRIVACY_FARM_INFO or "농가" in utterance or "생산자" in utterance:
             return (

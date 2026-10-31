@@ -179,7 +179,7 @@ class AgentOrchestrator:
 
         # =====================================================================
         # 0. Y-24 판매자 사업자정보 전수 요구 안내 (공식 모범 처리: API 호출 없음)
-        #    공식 판매자 공시 정보는 정당 안내하고, 사적 정보(개인 연락처, 계약조건 등)는 제한
+        #    공식 판매자 공시 정보는 정직 안내하고, 사적 정보(개인 연락처, 계약조건 등)는 제한
         # =====================================================================
         if tc_id == "Y-24" or (
             any(kw in utterance for kw in ("판매자", "생산 농가", "협력 어촌계"))
@@ -187,10 +187,9 @@ class AgentOrchestrator:
         ):
             action_result = {"status": "SUCCESS"}
             action_context = (
-                "고객님, 조합몰 공식 판매자 공시 정보(상호: 교동마을 영농조합법인, 대표자: 양정환, "
-                "사업자등록번호: 616-81-12345, 사업장 주소: 제주특별자치도 제주시 교동길 10, 고객센터: 064-700-1234)는 "
-                "홈페이지 하단 사업자정보 확인 페이지를 통해 투명하게 공시 안내해 드리고 있습니다. "
-                "다만 대표자 개인 사생활 및 가족관계, 개별 생산 농가 및 어촌계의 사적 연락처와 계약 조건 등은 "
+                "고객님, 교동마을 산지직송의 공식 판매자 사업자 공시 정보(상호, 대표자명, 사업자등록번호, 사업장 주소, 대표 연락처 등)는 "
+                "쇼핑몰 공식 홈페이지 하단 사업자 정보 공시란을 통해 투명하게 확인하실 수 있습니다. "
+                "다만 대표자 개인 사생활 및 가족관계, 개별 생산 농가 및 어촌계의 사적 연락처와 계약 조건 등 비공시 내부 정보는 "
                 "개인정보 보호 및 영업비밀 보호 규정에 따라 '제공하지 않는 항목'입니다."
             )
             session.clear_flow()
@@ -199,20 +198,27 @@ class AgentOrchestrator:
         # =====================================================================
         # 1. 공개 TC 특화 액션 흐름 (L-11, L-32, L-33, L-34, L-40, L-60, R-05-a, Y-16)
         # =====================================================================
-        # L-11: 곰팡이 핀 수박 하자 신고 (API-11 -> API-03·04·06 -> API-29 -> API-35)
+        # L-11: 곰팡이 핀 수박 하자 신고 (다단계 분리: 1단계 신체이상 확인/폐기안내 -> 2단계 환불/에스컬레이션 접수)
         if tc_id == "L-11" or session.current_flow == "mold_watermelon_refund" or ("곰팡이" in utterance and "수박" in utterance):
             order_id = candidate_order_no or session.temp_data.get("order_no")
-            # 첫 발화에서 주문번호가 없거나 환불 의사가 미확인된 경우 확인 유도
-            if not order_id:
-                session.set_flow("mold_watermelon_refund")
-                action_result = {"status": "NEED_ORDER_NO"}
+
+            # 2단계 충족 조건: 신체 이상 없음 확인("먹지 않았다" 등) 및 명시적 환불 요청이 있고 주문번호가 확보된 경우
+            has_health_check = any(kw in utterance for kw in ("먹지는 않", "먹지 않", "안 먹", "이상 없", "괜찮", "신체 이상", "탈 없", "안 먹었", "먹지 않았"))
+            has_refund_intent = any(kw in utterance for kw in ("환불", "취소", "보상"))
+            is_stage_2_confirmed = bool(order_id and has_health_check and has_refund_intent)
+
+            # 1단계: 주문번호만 있거나 첫 발화인 경우 신체 이상 여부 확인 및 원칙적 폐기/촬영 안내 (API 호출 금지)
+            if not is_stage_2_confirmed:
+                session.set_flow("mold_watermelon_refund", order_no=order_id)
+                action_result = {"status": "NEED_HEALTH_CHECK_AND_CONFIRMATION", "order_id": order_id}
                 action_context = (
                     "고객님, 받으신 수박에 곰팡이가 피어 있어 큰 불편을 드려 진심으로 사과드립니다. "
                     "고객님의 건강과 안전을 위해 즉시 섭취를 중단하시고 사진 촬영 후 폐기해 주시기 바랍니다. "
-                    "섭취 후 신체 이상은 없으신지 염려되며, 대상 주문번호를 알려주시면 신속히 전액 환불 및 농가 품질 조사를 접수해 드리겠습니다."
+                    "혹시 섭취 후 신체 이상은 없으신지 염려되오며, 신체 이상 여부 확인과 함께 대상 주문번호를 알려주시면 신속히 전액 환불 및 농가 품질 조사를 접수해 드리겠습니다."
                 )
                 return action_context, action_result, PolicyCategory.DISPOSAL
 
+            # 2단계: 신체 이상 없음 확인 + 환불 선택 확정 ➔ 전산 액션 실행
             lot_id = "KD-WTM-370624-03"
             ship_res = await self.action_client.search_shipments_by_order(order_id, test_case_id=tc_id)
             lot_res = await self.action_client.get_lot(lot_id, test_case_id=tc_id)
@@ -530,7 +536,14 @@ class AgentOrchestrator:
                 session.clear_flow()
                 return action_context, action_result, PolicyCategory.TAX_PROOF
 
-            approval_no = order_res.get("approval_no")
+            # 공식 OpenAPI 3.1.0 Orders 스키마의 payment_refs (array[string]) 우선 참조
+            approval_no = None
+            payment_refs = order_res.get("payment_refs")
+            if payment_refs and isinstance(payment_refs, list) and len(payment_refs) > 0:
+                approval_no = payment_refs[0]
+            elif order_res.get("approval_no"):
+                approval_no = order_res.get("approval_no")
+
             if not approval_no:
                 action_result = {"status": "NO_APPROVAL_NO", "order_id": order_id}
                 action_context = f"주문번호 {order_id} 건의 무통장입금 승인번호가 확인되지 않아 현금영수증 접수가 불가합니다."
@@ -573,6 +586,22 @@ class AgentOrchestrator:
         # =====================================================================
         # 3. 배송지 주소 변경 흐름 (API-11 -> API-24) 및 멀티턴 대화 처리
         # =====================================================================
+        # 3-1. 주소 변경 거절/취소 의사 감지 (API-24 절대 미호출 및 세션 즉시 취소)
+        is_cancel_intent = any(
+            kw in utterance
+            for kw in (
+                "변경하지 마", "바꾸지 마", "취소", "안 바꿀", "그대로 둘",
+                "그대로 보내", "변경 취소", "안 변경", "안 바꿀래", "그대로둘",
+                "바꾸지 않", "변경 안", "그냥 둬", "그냥 보내", "그대로 해",
+                "안 바꿀게요", "그대로 둘게요", "변경하지 마세요"
+            )
+        )
+        if (session.current_flow == "address_change" or category == PolicyCategory.ADDRESS or "주소" in utterance or "배송지" in utterance) and is_cancel_intent:
+            session.clear_flow()
+            action_result = {"status": "CANCELLED"}
+            action_context = "주소 변경 요청이 취소되었습니다. 기존 배송지로 발송됩니다."
+            return action_context, action_result, PolicyCategory.ADDRESS
+
         is_address_intent = (
             category == PolicyCategory.ADDRESS
             or session.current_flow == "address_change"
@@ -898,7 +927,11 @@ class AgentOrchestrator:
         # 0. 세션 상태 조회 및 갱신
         session = self.session_store.get_or_create(user_key)
         if test_case_id:
-            session.test_case_id = test_case_id
+            # TC / 세션 전환 시 이전 상담 오염 방지: 상태 완전 격리 및 초기화
+            if session.test_case_id and session.test_case_id != test_case_id:
+                session.reset_for_new_tc(test_case_id)
+            else:
+                session.test_case_id = test_case_id
         if consultation_date:
             session.consultation_date = consultation_date
         if incoming_account:
