@@ -355,6 +355,35 @@ class ActionServerClient:
             test_case_id=test_case_id,
         )
 
+    # API-25: 배송 일정 변경 접수 (POST /api/orders/{order_no}/schedule-change-requests)
+    async def request_schedule_change(
+        self,
+        order_no: str,
+        requested_date: str,
+        test_case_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        return await self._safe_request(
+            f"/api/orders/{quote(order_no.strip(), safe='')}/schedule-change-requests",
+            payload={"requested_date": requested_date.strip()},
+            method="POST",
+            test_case_id=test_case_id,
+        )
+
+    # API-27: 긴급 출고 접수 (POST /api/orders/{order_no}/expedite-requests)
+    async def request_expedite(
+        self,
+        order_no: str,
+        qty: int = 1,
+        reason: str = "당일 수령 희망에 따른 긴급 출고 요청",
+        test_case_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        return await self._safe_request(
+            f"/api/orders/{quote(order_no.strip(), safe='')}/expedite-requests",
+            payload={"qty": qty, "reason": reason.strip()},
+            method="POST",
+            test_case_id=test_case_id,
+        )
+
     # API-28: 재배송 접수 (POST /api/shipments/{shipment_id}/reship-requests)
     async def request_reship(
         self,

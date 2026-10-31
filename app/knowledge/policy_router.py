@@ -856,10 +856,6 @@ class PolicyRouter:
         if PolicyCategory.TAX_PROOF in categories:
             return PolicyCategory.TAX_PROOF
 
-        # 4-8. 농산 시즌 캘린더 (10품목 11라인 월별 상태 및 10대 업무 처리 가이드라인)
-        if PolicyCategory.SEASON_CALENDAR in categories:
-            return PolicyCategory.SEASON_CALENDAR
-
         # 5. 복합 주문 및 합포장 불가 (계약서 제6조)
         if PolicyCategory.COMBINED in categories or (has_agri and has_fish):
             return PolicyCategory.COMBINED
@@ -880,6 +876,7 @@ class PolicyRouter:
             PolicyCategory.ADDRESS,
             PolicyCategory.AUTH,
             PolicyCategory.ESCALATE,
+            PolicyCategory.SEASON_CALENDAR,
         ]
 
         for cat in specific_priority:

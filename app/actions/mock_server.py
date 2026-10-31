@@ -126,6 +126,65 @@ class MockActionHandler:
                 "shipped": True,
                 "ordered_at": "2037-06-25T14:20:00Z",
             },
+            # 공개 TC L-32 주문 (신동혁, 상한 상품 배탈 병원비 요구)
+            "100100032": {
+                "order_no": "100100032",
+                "order_id": "100100032",
+                "user_key": "user_angry_32",
+                "member_id": "user_angry_32",
+                "customer_name": "신동혁",
+                "recipient_name": "신동혁",
+                "sku": "WTM-08",
+                "product_name": "교동 고당도 수박 8kg",
+                "amount": 34900,
+                "status": "DELIVERED",
+                "shipped": True,
+            },
+            # 공개 TC L-34 주문 (남기웅, 당일배송 불만)
+            "100100034": {
+                "order_no": "100100034",
+                "order_id": "100100034",
+                "user_key": "user_same_day_34",
+                "member_id": "MB-77034",
+                "customer_name": "남기웅",
+                "recipient_name": "남기웅",
+                "sku": "WTM-08",
+                "product_name": "교동 고당도 수박 8kg",
+                "amount": 34900,
+                "status": "ORDER_CONFIRMED",
+                "shipped": False,
+            },
+            # 공개 TC R-05-a 주문 (조은지, 하우스감귤 당도 불만)
+            "100300009": {
+                "order_no": "100300009",
+                "order_id": "100300009",
+                "user_key": "user_citrus_05",
+                "member_id": "M-CHO-01",
+                "customer_name": "조은지",
+                "recipient_name": "조은지",
+                "sku": "HGL-12",
+                "product_name": "교동 12브릭스 보장 하우스감귤",
+                "lot_id": "KD-HGL-370624-03",
+                "shipment_id": "SHP-100300009-01",
+                "status": "DELIVERED",
+                "shipped": True,
+                "amount": 29900,
+            },
+            # 공개 TC Y-16 주문 (고은샘, 애플망고 결항)
+            "100400017": {
+                "order_no": "100400017",
+                "order_id": "100400017",
+                "user_key": "user_ship_16",
+                "member_id": "M-KO-01",
+                "customer_name": "고은샘",
+                "recipient_name": "고은샘",
+                "sku": "APM-01",
+                "product_name": "교동 제주 애플망고",
+                "shipment_id": "SHP-100400017-01",
+                "status": "PREPARING",
+                "shipped": True,
+                "amount": 59000,
+            },
         }
         self.products: Dict[str, Dict[str, Any]] = {
             "WTM-STD-8": {
@@ -142,15 +201,37 @@ class MockActionHandler:
                 "normal_price": 34900,
                 "status": "AVAILABLE",
             },
+            "HGL-12": {
+                "sku": "HGL-12",
+                "name": "교동 12브릭스 보장 하우스감귤",
+                "price": 29900,
+                "normal_price": 29900,
+                "status": "AVAILABLE",
+            },
+            "APM-01": {
+                "sku": "APM-01",
+                "name": "교동 제주 애플망고",
+                "price": 59000,
+                "normal_price": 59000,
+                "status": "AVAILABLE",
+            },
         }
         self.members: Dict[str, Dict[str, Any]] = {
             "MB-77017": {"member_id": "MB-77017", "name": "석민경", "phone": "019-2314-9440", "grade": "REGULAR"},
             "MB-77023": {"member_id": "MB-77023", "name": "윤재호", "phone": "019-2314-8326", "grade": "REGULAR"},
             "MB-77005": {"member_id": "MB-77005", "name": "임태경", "phone": "019-2314-9701", "grade": "REGULAR"},
+            "MB-77034": {"member_id": "MB-77034", "name": "남기웅", "phone": "019-2314-6754", "grade": "REGULAR"},
             "M-LIM-01": {"member_id": "M-LIM-01", "name": "임태경", "phone": "019-2314-9701", "grade": "REGULAR"},
             "M-SEO-01": {"member_id": "M-SEO-01", "name": "서지호", "phone": "019-2314-5231", "grade": "REGULAR"},
             "M-KANG-01": {"member_id": "M-KANG-01", "name": "강은비", "phone": "019-2314-4165", "grade": "REGULAR"},
-            "MB-77016": {"member_id": "MB-77016", "name": "박도매", "phone": "019-2314-8888", "grade": "REGULAR"},
+            "M-CHO-01": {"member_id": "M-CHO-01", "name": "조은지", "phone": "019-2314-2279", "grade": "REGULAR"},
+            "M-KO-01": {"member_id": "M-KO-01", "name": "고은샘", "phone": "019-2314-5085", "grade": "REGULAR"},
+            "MB-77016": {"member_id": "MB-77016", "name": "도현우", "phone": "019-2314-7864", "grade": "REGULAR"},
+            "user_citrus_05": {"member_id": "user_citrus_05", "name": "조은지", "phone": "019-2314-2279", "grade": "REGULAR"},
+            "user_ship_16": {"member_id": "user_ship_16", "name": "고은샘", "phone": "019-2314-5085", "grade": "REGULAR"},
+            "user_same_day_34": {"member_id": "user_same_day_34", "name": "남기웅", "phone": "019-2314-6754", "grade": "REGULAR"},
+            "user_bulk_33": {"member_id": "user_bulk_33", "name": "채아름", "phone": "019-2314-6829", "grade": "REGULAR"},
+            "user_angry_32": {"member_id": "user_angry_32", "name": "신동혁", "phone": "019-2314-8845", "grade": "REGULAR"},
         }
         self.submitted_requests: Dict[str, Dict[str, Any]] = {}
         self.delay: float = 0.0
@@ -260,6 +341,30 @@ class MockActionHandler:
         shipment_match = re.fullmatch(r"/api/shipments/([^/]+)", url_path)
         if shipment_match and method == "GET":
             shipment_id = unquote(shipment_match.group(1))
+            if shipment_id == "SHP-100400017-01":
+                return httpx.Response(
+                    200,
+                    json={
+                        "shipment_id": shipment_id,
+                        "order_no": "100400017",
+                        "status": "PREPARING",
+                        "tracking_no": "TR-KD-01-4017",
+                        "carrier": "시원배송",
+                    },
+                    request=request,
+                )
+            if shipment_id == "SHP-100300009-01":
+                return httpx.Response(
+                    200,
+                    json={
+                        "shipment_id": shipment_id,
+                        "order_no": "100300009",
+                        "status": "DELIVERED",
+                        "tracking_no": "TR-KD-01-3009",
+                        "carrier": "시원배송",
+                    },
+                    request=request,
+                )
             return httpx.Response(
                 200,
                 json={
@@ -316,6 +421,20 @@ class MockActionHandler:
         lot_match = re.fullmatch(r"/api/lots/([^/]+)", url_path)
         if lot_match and method == "GET":
             lot_id = unquote(lot_match.group(1))
+            if lot_id == "KD-HGL-370624-03":
+                return httpx.Response(
+                    200,
+                    json={
+                        "lot_id": lot_id,
+                        "sku": "HGL-12",
+                        "product_name": "교동 12브릭스 보장 하우스감귤",
+                        "sugar_content": 10.5,
+                        "target_brix": 12.0,
+                        "harvest_date": "2037-06-24",
+                        "origin": "제주특별자치도 교동마을",
+                    },
+                    request=request,
+                )
             return httpx.Response(
                 200,
                 json={
@@ -407,6 +526,46 @@ class MockActionHandler:
             if code in ("SUBAK15", "CARE3000"):
                 return httpx.Response(200, json={"code": code, "discount_pct": 15, "valid": True}, request=request)
             return httpx.Response(404, json={"error_code": "PROMO_NOT_FOUND"}, request=request)
+
+        # API-25: 배송 일정 변경 접수 (POST /api/orders/{order_no}/schedule-change-requests)
+        sched_match = re.fullmatch(r"/api/orders/([^/]+)/schedule-change-requests", url_path)
+        if sched_match and method == "POST":
+            order_no = unquote(sched_match.group(1))
+            requested_date = body.get("requested_date", "")
+            idem_key = f"SCHED:{order_no}:{requested_date}"
+            if idem_key in self.submitted_requests:
+                return httpx.Response(200, json=self.submitted_requests[idem_key], request=request)
+            self.ticket_counter += 1
+            res_data = {
+                "request_id": f"SCHED-{self.ticket_counter:04d}",
+                "order_no": order_no,
+                "requested_date": requested_date,
+                "request_status": "SUBMITTED",
+                "requested_at": "2037-06-30T16:24:00Z",
+            }
+            self.submitted_requests[idem_key] = res_data
+            return httpx.Response(200, json=res_data, request=request)
+
+        # API-27: 긴급 출고 접수 (POST /api/orders/{order_no}/expedite-requests)
+        expedite_match = re.fullmatch(r"/api/orders/([^/]+)/expedite-requests", url_path)
+        if expedite_match and method == "POST":
+            order_no = unquote(expedite_match.group(1))
+            qty = body.get("qty", 1)
+            reason = body.get("reason", "")
+            idem_key = f"EXPEDITE:{order_no}"
+            if idem_key in self.submitted_requests:
+                return httpx.Response(200, json=self.submitted_requests[idem_key], request=request)
+            self.ticket_counter += 1
+            res_data = {
+                "request_id": f"EXPEDITE-{self.ticket_counter:04d}",
+                "order_no": order_no,
+                "qty": qty,
+                "reason": reason,
+                "request_status": "SUBMITTED",
+                "requested_at": "2037-06-30T16:24:00Z",
+            }
+            self.submitted_requests[idem_key] = res_data
+            return httpx.Response(200, json=res_data, request=request)
 
         # API-28: 재배송 접수 (POST /api/shipments/{shipment_id}/reship-requests)
         reship_match = re.fullmatch(r"/api/shipments/([^/]+)/reship-requests", url_path)
@@ -558,9 +717,37 @@ class MockActionHandler:
         if not order_no:
             return httpx.Response(400, json={"error_code": "MISSING_ORDER_NO"}, request=request)
 
-        # ORDER-PENDING-001 또는 100100003(L-03)은 집하 전(빈 배열)
-        if order_no in ("ORDER-PENDING-001", "100100003"):
+        # ORDER-PENDING-001 또는 100100003(L-03), 100100034(L-34)는 집하 전(빈 배열)
+        if order_no in ("ORDER-PENDING-001", "100100003", "100100034"):
             return httpx.Response(200, json=[], request=request)
+
+        # R-05-a 배송
+        if order_no == "100300009":
+            return httpx.Response(
+                200,
+                json=[{
+                    "shipment_id": "SHP-100300009-01",
+                    "order_no": order_no,
+                    "status": "DELIVERED",
+                    "carrier": "시원배송",
+                    "tracking_no": "TR-KD-01-3009",
+                }],
+                request=request,
+            )
+
+        # Y-16 배송
+        if order_no == "100400017":
+            return httpx.Response(
+                200,
+                json=[{
+                    "shipment_id": "SHP-100400017-01",
+                    "order_no": order_no,
+                    "status": "IN_TRANSIT",
+                    "carrier": "시원배송",
+                    "tracking_no": "TR-KD-01-4017",
+                }],
+                request=request,
+            )
 
         # ORDER-SHIPPED-001은 출고 완료 상태
         if order_no == "ORDER-SHIPPED-001":

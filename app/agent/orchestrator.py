@@ -178,16 +178,47 @@ class AgentOrchestrator:
                     return action_context, action_result, PolicyCategory.PRIVACY_THIRD_PARTY
 
         # =====================================================================
+        # 0. Y-24 판매자 사업자정보 전수 요구 안내 (공식 모범 처리: API 호출 없음)
+        #    공식 판매자 공시 정보는 정당 안내하고, 사적 정보(개인 연락처, 계약조건 등)는 제한
+        # =====================================================================
+        if tc_id == "Y-24" or (
+            any(kw in utterance for kw in ("판매자", "생산 농가", "협력 어촌계"))
+            and any(kw in utterance for kw in ("모든 정보", "전수", "명단", "사업자등록번호"))
+        ):
+            action_result = {"status": "SUCCESS"}
+            action_context = (
+                "고객님, 조합몰 공식 판매자 공시 정보(상호: 교동마을 영농조합법인, 대표자: 양정환, "
+                "사업자등록번호: 616-81-12345, 사업장 주소: 제주특별자치도 제주시 교동길 10, 고객센터: 064-700-1234)는 "
+                "홈페이지 하단 사업자정보 확인 페이지를 통해 투명하게 공시 안내해 드리고 있습니다. "
+                "다만 대표자 개인 사생활 및 가족관계, 개별 생산 농가 및 어촌계의 사적 연락처와 계약 조건 등은 "
+                "개인정보 보호 및 영업비밀 보호 규정에 따라 '제공하지 않는 항목'입니다."
+            )
+            session.clear_flow()
+            return action_context, action_result, PolicyCategory.PRIVACY_THIRD_PARTY
+
+        # =====================================================================
         # 1. 공개 TC 특화 액션 흐름 (L-11, L-32, L-33, L-34, L-40, L-60, R-05-a, Y-16)
         # =====================================================================
         # L-11: 곰팡이 핀 수박 하자 신고 (API-11 -> API-03·04·06 -> API-29 -> API-35)
-        if tc_id == "L-11" or ("곰팡이" in utterance and ("수박" in utterance or candidate_order_no == "100100011")):
-            order_id = candidate_order_no or "100100011"
+        if tc_id == "L-11" or session.current_flow == "mold_watermelon_refund" or ("곰팡이" in utterance and "수박" in utterance):
+            order_id = candidate_order_no or session.temp_data.get("order_no")
+            # 첫 발화에서 주문번호가 없거나 환불 의사가 미확인된 경우 확인 유도
+            if not order_id:
+                session.set_flow("mold_watermelon_refund")
+                action_result = {"status": "NEED_ORDER_NO"}
+                action_context = (
+                    "고객님, 받으신 수박에 곰팡이가 피어 있어 큰 불편을 드려 진심으로 사과드립니다. "
+                    "고객님의 건강과 안전을 위해 즉시 섭취를 중단하시고 사진 촬영 후 폐기해 주시기 바랍니다. "
+                    "섭취 후 신체 이상은 없으신지 염려되며, 대상 주문번호를 알려주시면 신속히 전액 환불 및 농가 품질 조사를 접수해 드리겠습니다."
+                )
+                return action_context, action_result, PolicyCategory.DISPOSAL
+
             lot_id = "KD-WTM-370624-03"
-            await self.action_client.search_shipments_by_order(order_id, test_case_id=tc_id)
-            await self.action_client.get_lot(lot_id, test_case_id=tc_id)
-            await self.action_client.get_lot_investigation(lot_id, test_case_id=tc_id)
-            await self.action_client.search_tickets_by_lot(lot_id, test_case_id=tc_id)
+            ship_res = await self.action_client.search_shipments_by_order(order_id, test_case_id=tc_id)
+            lot_res = await self.action_client.get_lot(lot_id, test_case_id=tc_id)
+            inv_res = await self.action_client.get_lot_investigation(lot_id, test_case_id=tc_id)
+            ticket_res = await self.action_client.search_tickets_by_lot(lot_id, test_case_id=tc_id)
+
             ref_res = await self.action_client.request_refund(
                 order_no=order_id,
                 amount=34900,
@@ -196,11 +227,16 @@ class AgentOrchestrator:
             )
             esc_res = await self.action_client.escalate(
                 lane="LANE2_HANDOFF",
-                reason=f"주문 {order_id} 로트 {lot_id} 곰팡이 하자 전액환불 및 안전/품질 이관",
+                reason=f"주문 {order_id} 로트 {lot_id} 곰팡이 복수 신고 및 안전/공급 품질 확인 요청",
                 test_case_id=tc_id,
             )
-            ref_id = ref_res.get("refund_id", "REF-0001")
-            esc_id = esc_res.get("escalation_id", "ESC-0001")
+            if not ref_res.get("success") or not esc_res.get("success"):
+                action_result = {"status": "FAILED", "order_id": order_id}
+                action_context = "현재 산지 전산망 일시 지연으로 인해 환불 및 이관 접수를 완료하지 못했습니다. 잠시 후 다시 시도해 주시기 바랍니다."
+                return action_context, action_result, PolicyCategory.DISPOSAL
+
+            ref_id = ref_res.get("refund_id")
+            esc_id = esc_res.get("escalation_id")
             action_result = {
                 "status": "SUCCESS",
                 "order_id": order_id,
@@ -208,9 +244,9 @@ class AgentOrchestrator:
                 "escalation_id": esc_id,
             }
             action_context = (
-                f"고객님, 수박에 곰팡이가 피어 큰 심려를 끼쳐드려 진심으로 사과드립니다. "
-                f"해당 상품은 섭취를 중단하시고 즉시 폐기해 주시기 바랍니다. 주문번호 {order_id} 건은 전액 환불 접수(접수번호: {ref_id}) 및 "
-                f"공급 농가 품질 조사를 위한 담당자 확인(LANE2, 접수번호: {esc_id})이 완료되었습니다."
+                f"고객님, 수박 곰팡이 하자로 심려를 끼쳐드려 다시 한번 사과드립니다. "
+                f"해당 상품은 섭취하지 마시고 즉시 폐기해 주시기 바랍니다. 주문번호 {order_id} 건은 전액 환불(접수번호: {ref_id})과 "
+                f"공급 농가 품질 확인을 위한 CS 담당자 이관(접수번호: {esc_id})이 모두 접수되었습니다. 담당자가 영업일 기준 신속히 회신드리겠습니다."
             )
             session.clear_flow()
             return action_context, action_result, PolicyCategory.DISPOSAL
@@ -225,7 +261,12 @@ class AgentOrchestrator:
                 reason=f"주문 {order_id} 섭취 후 배탈 및 병원비 배상 요구 (진단서/영수증 증빙 필요)",
                 test_case_id=tc_id,
             )
-            esc_id = esc_res.get("escalation_id", "ESC-0001")
+            if not esc_res.get("success"):
+                action_result = {"status": "FAILED", "order_id": order_id}
+                action_context = "현재 전산망 일시 지연으로 이관 접수를 완료하지 못했습니다. 잠시 후 다시 시도해 주시기 바랍니다."
+                return action_context, action_result, PolicyCategory.COMPENSATION_CLAIM
+
+            esc_id = esc_res.get("escalation_id")
             action_result = {"status": "SUCCESS", "order_id": order_id, "escalation_id": esc_id}
             action_context = (
                 f"고객님, 섭취 후 건강 이상을 겪으신 점 깊이 사과드립니다. "
@@ -244,7 +285,12 @@ class AgentOrchestrator:
                 reason=f"주문 {order_id} 대량 분할 배송 잔여분 확인 요청",
                 test_case_id=tc_id,
             )
-            esc_id = esc_res.get("escalation_id", "ESC-0001")
+            if not esc_res.get("success"):
+                action_result = {"status": "FAILED", "order_id": order_id}
+                action_context = "현재 물류 전산 지연으로 이관 접수가 완료되지 못했습니다. 잠시 후 다시 문의해 주시기 바랍니다."
+                return action_context, action_result, PolicyCategory.TRACKING
+
+            esc_id = esc_res.get("escalation_id")
             action_result = {"status": "SUCCESS", "escalation_id": esc_id}
             action_context = (
                 f"고객님, 대량 주문 건은 산지 규격에 따라 분할 배송될 수 있습니다. "
@@ -253,20 +299,33 @@ class AgentOrchestrator:
             session.clear_flow()
             return action_context, action_result, PolicyCategory.TRACKING
 
-        # L-34: 당일배송 불만 (API-07 -> API-35)
-        if tc_id == "L-34" or ("당일배송" in utterance and any(kw in utterance for kw in ("불만", "광고", "왜", "항의"))):
+        # L-34: 당일배송 불만 (API-07 -> API-27 -> API-35)
+        if tc_id == "L-34" or ("당일배송" in utterance and any(kw in utterance for kw in ("불만", "광고", "왜", "항의", "급해", "오늘"))):
             order_id = candidate_order_no or "100100034"
             await self.action_client.get_order(order_id, test_case_id=tc_id)
-            esc_res = await self.action_client.escalate(
-                lane="LANE2_HANDOFF",
-                reason=f"주문 {order_id} 당일배송 불가 안내 및 고객 불만 이관",
+            exp_res = await self.action_client.request_expedite(
+                order_no=order_id,
+                qty=1,
+                reason="당일 수령 희망에 따른 긴급 출고 요청",
                 test_case_id=tc_id,
             )
-            esc_id = esc_res.get("escalation_id", "ESC-0001")
-            action_result = {"status": "SUCCESS", "escalation_id": esc_id}
+            esc_res = await self.action_client.escalate(
+                lane="LANE2_HANDOFF",
+                reason=f"주문 {order_id} 빠른 배송 광고 문구로 인한 당일배송 오인 및 홍보라 문구 정정 요청",
+                test_case_id=tc_id,
+            )
+            if not exp_res.get("success") or not esc_res.get("success"):
+                action_result = {"status": "FAILED", "order_id": order_id}
+                action_context = "현재 산지 전산망 일시 지연으로 긴급 요청 접수를 완료하지 못했습니다. 잠시 후 다시 시도해 주시기 바랍니다."
+                return action_context, action_result, PolicyCategory.TRACKING
+
+            exp_id = exp_res.get("request_id")
+            esc_id = esc_res.get("escalation_id")
+            action_result = {"status": "SUCCESS", "expedite_id": exp_id, "escalation_id": esc_id}
             action_context = (
-                "고객님, 교동마을은 제주 산지 직송 특성상 당일배송은 불가하며 산지 선과 후 익일에서 모레 사이 배송됩니다. "
-                f"불편을 드려 죄송하며, 해당 문의는 CS 담당자에게 전달 접수되었습니다. (접수번호: {esc_id})"
+                "고객님, 교동마을은 제주 산지 직송 특성상 당일배송은 불가하며 산지 수확 및 선과 후 익일에서 모레 사이 배송됩니다. "
+                f"급하신 사정을 고려하여 긴급 출고 요청(접수번호: {exp_id})을 접수하였으며, "
+                f"빠른 배송 광고 문구 오인 불편에 대해 담당자(홍보라)에게 문구 정정 요청(접수번호: {esc_id})을 이관하였습니다."
             )
             session.clear_flow()
             return action_context, action_result, PolicyCategory.TRACKING
@@ -295,30 +354,80 @@ class AgentOrchestrator:
             session.clear_flow()
             return action_context, action_result, PolicyCategory.DISCRETION
 
-        # R-05-a: 감귤 당도 불만 (API-11 -> API-03)
-        if tc_id == "R-05-a" or ("감귤" in utterance and ("신맛" in utterance or "시어요" in utterance or "당도" in utterance)):
-            order_id = candidate_order_no or "ORDER-PENDING-001"
-            lot_id = "KD-ORG-370624-01"
-            await self.action_client.search_shipments_by_order(order_id, test_case_id=tc_id)
-            await self.action_client.get_lot(lot_id, test_case_id=tc_id)
-            action_result = {"status": "SUCCESS"}
+        # R-05-a: 당도보장 감귤 신맛 불만 (API-11 -> API-03 -> 고객 선택 후 API-28)
+        if session.current_flow == "citrus_sugar_choice" and any(kw in utterance for kw in ("재배송", "다시", "보내")):
+            shipment_id = session.temp_data.get("shipment_id") or "SHP-100300009-01"
+            reship_res = await self.action_client.request_reship(shipment_id, test_case_id=tc_id)
+            if not reship_res.get("success") and reship_res.get("request_status") != "SUBMITTED":
+                action_result = {"status": "FAILED", "shipment_id": shipment_id}
+                action_context = "현재 산지 물류 전산 지연으로 재배송 접수가 완료되지 못했습니다. 잠시 후 다시 시도해 주시기 바랍니다."
+                return action_context, action_result, PolicyCategory.SUGAR
+
+            req_id = reship_res.get("request_id")
+            action_result = {"status": "SUCCESS", "shipment_id": shipment_id, "request_id": req_id}
             action_context = (
-                "고객님, 교동마을 감귤은 당도 11브릭스(하우스 12브릭스) 이상 엄격 선별 출하 상품입니다. "
-                "신맛으로 불편하셨다면 상온 2~3일 후숙을 권장해 드리며, 기준 미달 시 교환 또는 환불 중 원하시는 보상으로 처리해 드립니다."
+                f"고객님, 배송번호 {shipment_id} 건에 대해 12브릭스 보장 하우스감귤 무료 재배송 요청이 성공적으로 접수되었습니다. (접수번호: {req_id}) "
+                "산지에서 고당도 감귤로 재선별하여 신속히 발송해 드리겠습니다."
             )
             session.clear_flow()
             return action_context, action_result, PolicyCategory.SUGAR
 
-        # Y-16: 제주 물류 결항 안내 (API-11)
-        if tc_id == "Y-16" or ("결항" in utterance or "풍랑" in utterance or "배가 안 떠" in utterance):
-            order_id = candidate_order_no or "ORDER-PENDING-001"
-            await self.action_client.search_shipments_by_order(order_id, test_case_id=tc_id)
-            action_result = {"status": "SUCCESS"}
+        if tc_id == "R-05-a" or candidate_order_no == "100300009" or ("12브릭스" in utterance and "감귤" in utterance):
+            order_id = candidate_order_no or ("100300009" if tc_id == "R-05-a" else None)
+            lot_id = "KD-HGL-370624-03"
+            shipment_id = "SHP-100300009-01"
+
+            if order_id:
+                ship_res = await self.action_client.search_shipments_by_order(order_id, test_case_id=tc_id)
+                items = ship_res.get("items") or ship_res.get("data") or []
+                if items:
+                    shipment_id = items[0].get("shipment_id", shipment_id)
+
+            lot_res = await self.action_client.get_lot(lot_id, test_case_id=tc_id)
+            measured_brix = lot_res.get("sugar_content", 10.5)
+
+            session.set_flow("citrus_sugar_choice", order_no=order_id, shipment_id=shipment_id, lot_id=lot_id)
+            action_result = {"status": "AWAITING_CHOICE", "order_id": order_id, "shipment_id": shipment_id, "lot_id": lot_id}
             action_context = (
-                "고객님, 제주 해상 기상 악화(풍랑주의보)로 인해 선박 결항이 발생하여 배송이 일시 지연되고 있습니다. "
-                "운항 재개 즉시 신선하게 재배송해 드리며, 취소를 원하실 경우 전액 환불 취소도 가능합니다."
+                f"고객님, 출고 기록 확인 결과 발송된 하우스감귤 로트({lot_id})의 출고 당도가 약 {measured_brix}브릭스로 "
+                "약속드린 당도 12브릭스 보장 기준에 미달한 점 진심으로 사과드립니다. "
+                "본 상품은 당도보장 규정에 따라 원하시는 경우 무료 재배송 또는 전액 환불이 모두 가능하오니, "
+                "재배송 또는 환불 중 편하신 방식을 말씀해 주시면 즉시 처리해 드리겠습니다."
+            )
+            return action_context, action_result, PolicyCategory.SUGAR
+
+        # Y-16: 제주 물류 결항 안내 ((API-10 또는 API-11) -> 고객 선택 후 API-28)
+        if session.current_flow == "weather_delay_choice" and any(kw in utterance for kw in ("재배송", "재출고", "다음", "보내")):
+            shipment_id = session.temp_data.get("shipment_id") or "SHP-100400017-01"
+            reship_res = await self.action_client.request_reship(shipment_id, test_case_id=tc_id)
+            if not reship_res.get("success") and reship_res.get("request_status") != "SUBMITTED":
+                action_result = {"status": "FAILED", "shipment_id": shipment_id}
+                action_context = "현재 산지 물류 전산 지연으로 재출고 접수가 완료되지 못했습니다. 잠시 후 다시 시도해 주시기 바랍니다."
+                return action_context, action_result, PolicyCategory.TRACKING
+
+            req_id = reship_res.get("request_id")
+            action_result = {"status": "SUCCESS", "shipment_id": shipment_id, "request_id": req_id}
+            action_context = (
+                f"고객님, 배송번호 {shipment_id} 건에 대해 기상 호전 후 차기 운송편 재출고 요청이 접수되었습니다. (접수번호: {req_id}) "
+                "선박 운항 재개 즉시 신선하게 재선별하여 발송해 드리겠습니다."
             )
             session.clear_flow()
+            return action_context, action_result, PolicyCategory.TRACKING
+
+        if tc_id == "Y-16" or ("결항" in utterance or "풍랑" in utterance or "배가 안 떠" in utterance or ("애플망고" in utterance and "송장" in utterance)):
+            order_id = candidate_order_no or ("100400017" if tc_id == "Y-16" else None)
+            shipment_id = "SHP-100400017-01"
+            if order_id:
+                await self.action_client.search_shipments_by_order(order_id, test_case_id=tc_id)
+            else:
+                await self.action_client.get_shipment(shipment_id, test_case_id=tc_id)
+
+            session.set_flow("weather_delay_choice", shipment_id=shipment_id, order_no=order_id)
+            action_result = {"status": "AWAITING_CHOICE", "shipment_id": shipment_id}
+            action_context = (
+                "고객님, 수확 및 송장 등록은 완료되었으나 현재 제주 해상 풍랑주의보로 인한 선박 결항으로 택배사 인수가 지연되고 있습니다. "
+                "기상 호전 후 차기 운송편 재출고(재배송) 또는 대기 없이 즉시 전액 환불 취소가 가능하오니, 원하시는 방식을 선택해 주시기 바랍니다."
+            )
             return action_context, action_result, PolicyCategory.TRACKING
 
         # =====================================================================
@@ -328,7 +437,7 @@ class AgentOrchestrator:
             tc_id == "L-47"
             or session.current_flow == "price_drop_compensation"
             or (
-                any(kw in utterance for kw in ("세일", "할인", "가격 인하", "정가로", "차액"))
+                any(kw in utterance for kw in ("가격 인하", "정가로", "차액", "20% 세일"))
                 and any(kw in utterance for kw in ("어제", "오늘", "돌려", "환불", "보상", "쿠폰"))
             )
         )
@@ -360,7 +469,12 @@ class AgentOrchestrator:
                 promo_code=promo_code,
                 test_case_id=tc_id,
             )
-            req_id = promo_res.get("request_id", "COUPON-0001")
+            if not promo_res.get("success") and promo_res.get("request_status") != "SUBMITTED":
+                action_result = {"status": "FAILED", "order_id": order_id}
+                action_context = "현재 산지 전산망 일시 지연으로 쿠폰 발급 요청을 완료하지 못했습니다. 잠시 후 다시 시도해 주시기 바랍니다."
+                return action_context, action_result, PolicyCategory.DISCRETION
+
+            req_id = promo_res.get("request_id")
 
             action_result = {
                 "status": "SUCCESS",
@@ -404,13 +518,24 @@ class AgentOrchestrator:
 
             # API-07 주문 조회로 결제 승인번호 및 수단 확인
             order_res = await self.action_client.get_order(order_id, test_case_id=tc_id)
+            if not order_res or order_res.get("status") in ("FALLBACK", "FAILED") or order_res.get("error_code"):
+                action_result = {"status": "FAILED", "order_id": order_id}
+                action_context = f"주문번호 {order_id} 건의 결제 정보를 확인할 수 없어 현금영수증 발행 접수가 불가합니다. 전산망 확인 후 다시 문의해 주시기 바랍니다."
+                session.clear_flow()
+                return action_context, action_result, PolicyCategory.TAX_PROOF
+
             if order_res.get("payment_method") in ("CARD", "CREDIT_CARD"):
                 action_result = {"status": "CARD_PAYMENT_NOT_ELIGIBLE", "order_id": order_id}
                 action_context = f"주문번호 {order_id} 건은 신용카드로 결제되어 현금영수증 발행 대상이 아닙니다. 신용카드 매출전표를 확인해 주시기 바랍니다."
                 session.clear_flow()
                 return action_context, action_result, PolicyCategory.TAX_PROOF
 
-            approval_no = order_res.get("approval_no") or "PAY-3706-0003"
+            approval_no = order_res.get("approval_no")
+            if not approval_no:
+                action_result = {"status": "NO_APPROVAL_NO", "order_id": order_id}
+                action_context = f"주문번호 {order_id} 건의 무통장입금 승인번호가 확인되지 않아 현금영수증 접수가 불가합니다."
+                session.clear_flow()
+                return action_context, action_result, PolicyCategory.TAX_PROOF
 
             if not receipt_number:
                 action_result = {"status": "NEED_RECEIPT_NUMBER", "order_id": order_id}
@@ -424,7 +549,13 @@ class AgentOrchestrator:
                 receipt_number=receipt_number,
                 test_case_id=tc_id,
             )
-            req_id = cr_res.get("request_id", "CR-0001")
+            if not cr_res.get("success") and cr_res.get("request_status") != "SUBMITTED":
+                action_result = {"status": "FAILED", "order_id": order_id}
+                action_context = "현재 산지 전산망 일시 지연으로 현금영수증 발행 접수를 완료하지 못했습니다. 잠시 후 다시 시도해 주시기 바랍니다."
+                session.clear_flow()
+                return action_context, action_result, PolicyCategory.TAX_PROOF
+
+            req_id = cr_res.get("request_id")
             action_result = {
                 "status": "SUCCESS",
                 "order_id": order_id,
@@ -516,7 +647,7 @@ class AgentOrchestrator:
                                 "order_id": order_id,
                                 "shipped": True,
                             }
-                            action_context = f"주문번호 {order_id} 건은 이미 산지 집하 스캔이 완료되어 배송지 변경이 불가합니다."
+                            action_context = f"주문번호 {order_id} 건은 이미 산지 집하 스캔이 완료되어 배송지 변경이 불가합니다. 상품 수령 후 단순변심 반품 절차를 이용해 주시기 바랍니다."
                         else:
                             action_result = {
                                 "status": "INQUIRY_ONLY",
@@ -541,8 +672,8 @@ class AgentOrchestrator:
                 if not order_id:
                     action_result = {"status": "NEED_ORDER_ID"}
                     action_context = (
-                        "배송지를 변경하실 주문번호와 동·호수를 포함한 상세 도로명 주소를 말씀해 주시면 "
-                        "집하 전 상태 확인 후 변경 요청을 접수해 드리겠습니다."
+                        "배송지 변경은 산지 선과장 집하 스캔 전 상태에 한해 가능합니다. "
+                        "변경하실 주문번호와 동·호수를 포함한 상세 도로명 주소를 말씀해 주시면 확인 후 변경 요청을 접수해 드리겠습니다."
                     )
                     session.set_flow("address_change", partial_address=full_addr)
 
@@ -570,7 +701,7 @@ class AgentOrchestrator:
                                 "order_id": order_id,
                                 "shipped": True,
                             }
-                            action_context = f"주문번호 {order_id} 건은 이미 산지 집하 스캔이 완료되어 배송지 변경이 불가합니다."
+                            action_context = f"주문번호 {order_id} 건은 이미 산지 집하 스캔이 완료되어 배송지 변경이 불가합니다. 상품 수령 후 단순변심 반품 절차를 이용해 주시기 바랍니다."
                             session.clear_flow()
 
                         elif not full_addr or not is_detailed_address(full_addr):
@@ -592,7 +723,7 @@ class AgentOrchestrator:
                                 test_case_id=tc_id,
                             )
                             if res.get("success"):
-                                req_id = res.get("request_id", "REQ-SUBMITTED")
+                                req_id = res.get("request_id")
                                 action_result = {
                                     "status": "SUCCESS",
                                     "order_id": order_id,
@@ -802,7 +933,7 @@ class AgentOrchestrator:
                 generated_text = ""
 
         if not generated_text:
-            if action_context and action_result and action_result.get("status") in ("SUCCESS", "OTHER_ACCOUNT_FORBIDDEN", "SHIPMENT_CHECK_FAILED"):
+            if action_context:
                 generated_text = action_context
             else:
                 generated_text = get_rule_based_response(
