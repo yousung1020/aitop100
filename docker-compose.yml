@@ -1,0 +1,35 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: gyodong-cs-app
+    restart: always
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - PORT=8000
+      - ENVIRONMENT=production
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  # Optional: Cloudflare Named Tunnel container
+  # To run with tunnel: docker compose --profile tunnel up -d
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: gyodong-cs-tunnel
+    restart: always
+    profiles:
+      - tunnel
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN:-}
+    command: tunnel run
+    depends_on:
+      app:
+        condition: service_healthy

@@ -1,0 +1,28 @@
+{
+  "checked_at": "2026-10-31T04:17:40.913803+00:00",
+  "source_page": "https://aitop100.org/contest/docs#description/introduction",
+  "document_resource": "https://aitop100.org/api/contest/docs/actions",
+  "retrieval": "로그인된 Chrome에서 문서 리소스를 GET 조회; 공식 JS 객체를 격리된 로컬 VM에서 JSON 직렬화",
+  "openapi_version": "3.1.0",
+  "server": "https://gyodong-mall-action.aitop100.org",
+  "business_api_count": 40,
+  "get_count": 23,
+  "business_post_count": 17,
+  "reset_count": 1,
+  "data_schema_count": 50,
+  "snapshot_file": "official_actions_openapi.json",
+  "snapshot_sha256": "f9573f43dc993e6ad8af93cd4987e1ff664053a5486d1aae70dec1891be401c3",
+  "public_tc_count": 15,
+  "business_api_calls_performed": false,
+  "reset_performed": false,
+  "checks_passed": [
+    "API-01~API-40 전체 목록 및 별도 초기화 포함",
+    "업무 조회 23개·접수 17개·초기화 1개",
+    "요청 필수 필드와 문서 표 일치",
+    "데이터 모델 50종 문서화",
+    "공개 TC 15건·개별 페이지 및 Markdown HTTP 200",
+    "TC별 명시 API ID 유효성",
+    "OpenAPI 내부 참조 해석",
+    "실제 액션 토큰 미포함"
+  ]
+}

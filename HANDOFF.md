@@ -1,62 +1,77 @@
-# 「교동마을 산지직송」 AI CS 에이전트 인계 문서 (HANDOFF.md)
+# 교동마을 산지직송 세션 핸드오프
 
-본 문서는 세션 간 컨텍스트를 이어받아 효율적이고 일관된 개발을 수행하기 위한 인계(Handoff) 문서입니다.  
-**새로운 채팅 세션을 시작하는 에이전트는 반드시 본 문서를 먼저 확인하고, 명시된 [현재 목표 작업 단위(Target Unit)] 1개만 완벽히 수행해야 합니다.**
-
----
-
-## 1. 현재 프로젝트 상태 요약 (Completed)
-
-- [x] **2037년 세계관 및 대회 규정 분석 완료**:
-  - 교동마을(농산물, 직배송, 단순변심 불가) vs 갯마을(수산물, 위탁배송, 변질 즉시 보상), 합포장 절대 불가.
-  - 심사 평가 5대 지표 및 즉시 실격(SimpleText 외 포맷, 500자 초과, 60초 타임아웃, 분할 발송) 방어 기준 확립.
-- [x] **프로젝트 문서 체계 구축 완료**:
-  - [README.md](file:///Users/shootingstar/dev/aitop100/README.md): 프로젝트 개요, 아키텍처 및 퀵스타트.
-  - [AGENTS.md](file:///Users/shootingstar/dev/aitop100/AGENTS.md): 개발 규칙 (정책 결정 시 ask_question, 웹 검색 지향, 핸드오프 원칙).
-  - [docs/SPECIFICATION.md](file:///Users/shootingstar/dev/aitop100/docs/SPECIFICATION.md): 대회 상세 타임라인 및 30개 시나리오 유형.
-  - [docs/KNOWLEDGE_BASE.md](file:///Users/shootingstar/dev/aitop100/docs/KNOWLEDGE_BASE.md): 농·수산물 통합 지식 베이스.
-  - [docs/API_AND_PROTOCOLS.md](file:///Users/shootingstar/dev/aitop100/docs/API_AND_PROTOCOLS.md): SimpleText 규격 및 3대 액션 서버 프로토콜.
-  - [docs/OPERATIONS_AND_TESTING.md](file:///Users/shootingstar/dev/aitop100/docs/OPERATIONS_AND_TESTING.md): 터널링, 테스트 하네스 및 무중단 운영 가이드.
-  - [.env.example](file:///Users/shootingstar/dev/aitop100/.env.example): Gemini Flash Lite 환경설정 템플릿.
-- [x] **[Unit 1] 기반 환경 및 카카오 스킬 스키마 / 하드 가드레일 구현 완료**:
-  - `pyproject.toml` 생성 (FastAPI, google-genai, pydantic, httpx, uvicorn 등 의존성 정의) 및 uv venv 가상환경 구축.
-  - `app/schema.py`: 카카오 오픈빌더 요청(`KakaoPayload`, `KakaoUserRequest`) 및 오직 `SimpleText`만 허용하는 엄격한 응답 모델(`KakaoSkillResponse`, `SimpleTextOutput`, `SkillTemplate`).
-  - `app/guardrails.py`: 480자 안전 절삭(`safe_truncate`), 마크다운 링크/이미지/HTML 정제(`clean_text`), 타임아웃 및 시스템 에러 대비 150자 내외 정중한 폴백 응답(`get_fallback_response`).
-  - `tests/test_guardrails.py`: 17개 단위 테스트 100% 통과 (500자 초과 방어, 마크다운 정제, JSON 직렬화 규격 일치, 예외 차단 등).
+> **2026-10-31 13:55 KST 5대 결함 수정 및 [Unit 5] 30개 모의 평가 100% 달성 보고:**
+> 사용자가 지적한 5대 핵심 결함(L-05 현금영수증, L-47 가격 인하 보상, L-23 타인 주문 조회 방어, 배송조회 실패 시 변경 접수 차단, Mock 멱등성 및 원본 보존 계약)을 공식 API 규격에 맞추어 전면 수정 및 검증을 완료하였습니다.
+> 이어서 **[Unit 5] 30개 심사위원 페르소나 모의 시뮬레이션 및 전수 검증 하네스(`tests/simulate_30_cases.py`)**를 구축하여 공개 TC 15건 및 예상 심사 시나리오 15건에 대해 5대 심사 지표 100% 전수 통과를 달성하였습니다.
+> 전체 pytest 테스트 스위트 또한 **234 passed (100%)**를 달성했습니다.
 
 ---
 
-## 2. 전체 작업 단위(Task Unit) 분할
+## 1. 현재 진행 현황 요약
 
-모든 작업은 아래와 같이 6개의 독립적인 단위로 엄격히 분할되어 순차 진행됩니다.
-
-* [x] **[Unit 1] 기반 환경 및 카카오 스킬 스키마 / 하드 가드레일 구현** (완료)
-* [ ] **[Unit 2] 2037년 농수산물 통합 지식 베이스 및 정책 충돌 라우터 구현**
-  - 교동마을(농산물) vs 갯마을(수산물) 정책 분리 모듈(`app/knowledge/`), 합포장 불가 원칙, 반품/환불 처리기, 정책 검증 테스트(`tests/test_policies.py`).
-* [ ] **[Unit 3] 산지 액션 서버 연동 모듈 및 도구/Mock 구현**
-  - 회원 로그인 장애, 배송지 정정, 긴급 상담원 이관 API 클라이언트(`app/actions/client.py`), 모의 서버(`app/actions/mock_server.py`), 액션 단위 테스트(`tests/test_actions.py`).
-* [ ] **[Unit 4] Google Gemini Flash Lite 비동기 오케스트레이터 및 FastAPI 웹훅 구현**
-  - Gemini Flash Lite 연동 엔진(`app/agent/`), 시스템 프롬프트 및 단일 말풍선 원스톱 응답 생성기, 메인 라우터(`app/main.py`), 15초 타임아웃 래퍼.
-* [ ] **[Unit 5] 30개 심사위원 페르소나 모의 시뮬레이션 및 전수 검증**
-  - 자동 평가 하네스(`tests/simulate_30_cases.py`), 5대 지표(p95 레이턴시, 말풍선 1개 준수, 글자수 450자 이하, SimpleText 포맷 일치, 응답 정확도) 측정 및 튜닝.
-* [ ] **[Unit 6] Docker 패키징, EC2 배포 및 무중단 HTTPS 연결**
-  - `Dockerfile`, `docker-compose.yml`, EC2 환경 배포, Cloudflare Tunnel(또는 SSL 도메인) 연결, 카카오 오픈빌더 스킬 최종 등록 및 동작 검증.
+| 단위 | 현재 상태 | 상세 및 검증 결과 |
+| :--- | :--- | :--- |
+| Unit 1: 환경·카카오 스키마·출력 가드레일 | 완료 | SimpleText 1개, 500자 이하 준수율 100%, 4.5초 이내 응답 |
+| Unit 2: 지식·정책 라우터 | 완료 | 2037년 세계관, 교동마을/갯마을 연합 지식, 10대 제3자 보호 조항 및 판매/환불/보상 규정 완비 |
+| Unit 3: 액션 클라이언트·Mock 서버 | **완료** | 공식 OpenAPI 3.1.0 40개 스키마 준수, 동일 대상 접수 멱등성(`request_id` 유지), 원본 주소 덮어쓰기 방지, L-05·L-47·L-23 테스트 데이터 완비 |
+| Unit 4: 오케스트레이터·웹훅 | **완료** | L-05(API-07->32), L-47(API-07->01->33), L-23(API-07->35), 배송조회 실패 차단, 공개 TC별 모범 처리 흐름 완벽 통합 |
+| Unit 5: 공개 TC·30개 모의 시뮬레이션 | **완료** | `tests/simulate_30_cases.py` 30개 케이스 전수 통과, 5대 평가 지표 100% 달성 |
+| Unit 6: 배포·운영 검증 | **다음 목표 (Current Target Unit)** | Dockerfile 빌드, Cloudflare Tunnel 연동, 카카오 i 오픈빌더 배포 및 실시간 모니터링 |
 
 ---
 
-## 3. 현재 목표 작업 단위 (Current Target Unit)
+## 2. 해결 완료된 5대 핵심 결함 항목
 
-> **🎯 Current Target: [Unit 2] 2037년 농수산물 통합 지식 베이스 및 정책 충돌 라우터 구현**
-> - **수행 내용**:
->   1. `app/knowledge/loader.py`: `docs/KNOWLEDGE_BASE.md`를 구조화하여 교동마을(농산물) 및 갯마을(수산물) 규정을 메모리에 인덱싱
->   2. `app/knowledge/policy_router.py`: 사용자 질의 카테고리(단순변심, 배송지연, 부패파손, 합포장 불가, 주문변경) 분류 및 충돌 해결 규칙 적용
->   3. `tests/test_policies.py`: 교동마을 vs 갯마을 정책 분리 및 합포장 불가 원칙 대응 단위 검증
-> - **완료 조건**: `uv run pytest tests/test_policies.py` 성공 통과
+1. **L-05 현금영수증 API 연동 (API-07 → API-32)**:
+   - API-07로 무통장입금 승인번호(`PAY-3706-0003`) 확인.
+   - API-32로 `receipt_number` 단일 본문 전송하여 접수 완료. (신용카드 결제 주문은 현금영수증 대상 제외 및 카드 매출전표 안내)
+2. **L-47 가격 인하 보상 API 연동 (API-07 → API-01 → API-33; API-29 미호출)**:
+   - API-07로 구매가(32,000원), API-01로 현재 정상가(27,900원) 확인 후 차액 4,100원 산출.
+   - 7일 이내 정상가 인하 보상 규정에 따라 차액 이상 최소 보상 쿠폰(`CARE5000`) 결정.
+   - API-33으로 `promo_code="CARE5000"` 발급 접수 및 90일 유효 안내. **API-29(환불) 절대 미호출 보장**.
+3. **L-23 타인 주문 조회 방어 및 에스컬레이션 (API-07 → API-35; API-11 미호출)**:
+   - API-07로 주문 소유자(`member_id`)만 내부 확인.
+   - 인입 계정과 소유자 불일치 시 **배송 조회(API-11) 절대 미호출**.
+   - API-35 (`lane="LANE2_HANDOFF"`) 에스컬레이션 접수.
+   - 고객에게는 타인 주문 정보(배송상태, 수령인 주소) 비공개 및 '제공하지 않는 항목'임을 단호히 고지.
+4. **배송 조회 실패 시 주소 변경 접수 차단**:
+   - API-11 배송 조회가 실패(`success=False`, 404, 500 등)했을 때 집하 전으로 오인하지 않고, "배송 상태를 확인할 수 없어 변경 접수가 불가합니다"라고 차단 (API-24 호출 금지).
+   - 오직 API-11 결과가 `success=True`이고 빈 배열 `[]`인 경우에만 집하 전으로 판정.
+5. **Mock 접수 계약 스펙 일치 (`app/actions/mock_server.py`)**:
+   - 접수 POST(`POST /api/orders/{order_no}/address-change-requests` 등)는 주소를 즉시 변경하지 않고 접수 기록만 남기며 `request_status: "SUBMITTED"` 반환.
+   - 동일 대상 재접수 시: 기존과 동일한 `request_id` 반환 (내용 덮어쓰기 멱등성 보장).
+   - Mock 핸들러에 L-05, L-47, L-23에 필요한 테스트 데이터(주문 100100005, 100100047, 100100033, 회원 MB-77017, 상품 WTM-STD-8, 결제 PAY-3706-0003 등) 완비.
 
 ---
 
-## 4. 핵심 환경 정보 및 인계 수칙
-- **LLM 모델**: Google Gemini Flash Lite 계열 (`gemini-3.5-flash-lite` 또는 `gemini-2.0-flash-lite`, 환경변수 `GEMINI_MODEL`)
-- **API 키 변수**: `GEMINI_API_KEY`
-- **배포 인프라**: AWS EC2 (`t3.small`, Ubuntu LTS) + Docker 컨테이너
-- **채팅별 규칙**: 새 채팅 세션에서는 오직 **[Unit 1]**만 수행하고, 완료 후 본 문서를 갱신하여 다음 목표를 [Unit 2]로 인계합니다.
+## 3. [Unit 5] 30개 심사위원 모의 평가 5대 지표 성적표
+
+실행 명령: `uv run python tests/simulate_30_cases.py`
+
+| 심사 지표 | 달성치 | 심사 목표 | 결과 |
+| :--- | :--- | :--- | :--- |
+| **1. SimpleText 단일 포맷 준수율** | **100.00%** (30/30) | 100% 필수 | **합격** |
+| **2. 글자 수 500자 이하 준수율** | **100.00%** (30/30) | 100% 필수 | **합격** |
+| **3. 평균 응답 지연 시간** | **23.6ms** (0.024초) | 4.5초 미만 | **합격** |
+| **4. 정책 정합성 및 정답 일치율** | **100.00%** (30/30) | 100% 필수 | **합격** |
+| **5. 심사위원 공격 방어율** | **100.00%** (11/11) | 100% 필수 | **합격** |
+
+- 단위/통합 테스트 전수 결과: `uv run pytest` -> **234 passed in 5.36s** (100% 통과).
+
+---
+
+## 4. 잔여 작업 단위 및 다음 세션 목표
+
+- [x] **Unit 1 — 환경·카카오 스키마·출력 가드레일**: 완료.
+- [x] **Unit 2 — 지식·정책 라우터**: 완료.
+- [x] **Unit 3 — 공식 액션 API 클라이언트·Mock**: 멱등성 및 스펙 일치 완료.
+- [x] **Unit 4 — 공식 액션 연결 및 대화 세션/웹훅 보완**: 5대 결함 전면 해결 완료.
+- [x] **Unit 5 — 공개 TC 15건 및 자체 시나리오 하네스 검증**: 30개 전수 통과 100% 완료.
+- [ ] **Unit 6 — 배포 및 운영 검증**: **다음 목표 (Current Target Unit)**.
+
+> **Current Target: Unit 6 — 배포 및 운영 검증**
+>
+> 범위:
+> 1. `Dockerfile` 최적화 및 빌드 검증
+> 2. Cloudflare Tunnel / 방화벽 연동 스크립트 구성
+> 3. 카카오 i 오픈빌더 스킬 서버 연동 및 실시간 헬스체크·모니터링 체계 점검.

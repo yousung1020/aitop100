@@ -1,105 +1,50 @@
-# 교동마을 산지직송 AI CS 에이전트 시스템
+# 교동마을 산지직송 AI CS 에이전트
 
-제주도 로컬 농수산물 유통 연합인 「교동마을 산지직송」의 카카오톡 기반 실시간 지능형 CS 상담 시스템 구축 프로젝트입니다.
+제주 교동마을과 갯마을의 농수산물 상담을 처리하는 카카오톡 CS 프로젝트입니다. 세계관 기본 기준일은 2037년 6월 30일이며, 공식 테스트 케이스에 별도 상담일이 있으면 해당 날짜를 사용합니다.
 
----
+## 현재 상태
 
-## 1. 프로젝트 개요 및 2037년 세계관 배경
+2026-10-31 기준 Unit 1·2의 기반과 Unit 3·4의 초기 구현이 있습니다. **공식 액션 API 연동은 미완료**입니다. 다른 에이전트가 공식 `/api/...` 클라이언트·Mock을 추가하는 중이며 레거시 호출도 남아 있습니다. 계약·통합 검증과 회귀 실패 해소 전까지 완료로 처리하지 않습니다.
 
-- **기준 시점**: 2037년 6월 30일
-- **쇼핑몰 오픈일**: 2037년 3월 2일
-- **쇼핑몰 명칭**: 「교동마을 산지직송」
-- **운영 배경**:
-  - 제주도의 제철 감귤 및 밭작물을 생산하는 **‘교동마을’**과 인근 포구에서 은갈치, 옥돔 등 수산물을 직송하는 **‘갯마을’**이 연합하여 운영하는 도농 복합 온라인 직거래 플랫폼입니다.
-  - 오픈 직후 주문량이 급증함에 따라, 쇼핑몰의 모든 고객 문의를 홀로 전담하던 청년회 CS 담당자 '이민준' 님이 업무 과중으로 심각한 위기에 직면하였습니다.
-- **프로젝트 미션**:
-  - 분산된 채널(마을 조합 공식 규정, 청년회 홍보 전단지, 산지 농장 작업 현황, 갯마을 위탁 물류 기록, 구두 관례 및 카카오 채널 사전 공지)에 파편화되어 있는 비정형 지식을 통합합니다.
-  - 판교 AX(AI Transformation) 엔지니어링 역량을 바탕으로 Google Gemini API를 연계한 고정밀·초저지연 카카오톡 CS 챗봇 에이전트를 구축하여 본선 심사를 통과하고 안정적인 무인 CS 체계를 확립합니다.
+- 다음 목표: **Unit 3 — 공식 액션 API 클라이언트·Mock·계약 테스트 반영**.
+- Unit 4: 공식 액션 연결, 후속 대화·고객 의사 확인, 접수 결과 안내 보완이 필요합니다.
+- Unit 5: 공개 TC 문서 15건은 확보했으나 시뮬레이션 하네스와 평가 결과는 아직 없습니다. 자체 30건 계획과 공식 공개 TC는 별개입니다.
+- Unit 6: 배포 인프라·외부 URL·카카오 운영 채널 검증은 미완료입니다.
+- 로컬 검증: 작업 시작 기준선은 `220 passed in 4.83s`, 병행 코드 변경 후 관찰한 재실행은 **`13 failed, 207 passed in 5.92s`**입니다. 주소 변경·계정 복구·이관 통합 테스트가 실패하며 공식 공개 TC·실제 모델 검증은 별도입니다.
 
----
+상세 상태와 다음 작업의 완료 기준은 [HANDOFF.md](HANDOFF.md)에 기록합니다.
 
-## 2. 시스템 아키텍처
+## 구성 및 응답 제약
 
-본 시스템은 카카오톡 챗봇 사용자 환경과 산지 물류 시스템 간의 유기적인 연동을 지원하도록 구성되어 있습니다.
+FastAPI 웹훅이 정책 규칙·Gemini·액션 클라이언트를 연결합니다. 사용자 선택 모델은 환경변수 `GEMINI_MODEL=gemini-3.5-flash-lite`입니다. 실제 이용 가능 여부와 응답 시간은 키를 설정한 환경에서 검증해야 합니다. 보조 모델 자동 재시도는 구현되어 있지 않습니다.
 
-```mermaid
-flowchart LR
-    User["카카오톡 사용자"] -->|메시지 전송| Kakao["카카오 i 오픈빌더"]
-    Kakao -->|Skill HTTP POST| FastAPI["FastAPI CS 엔진<br/>(포트 8000)"]
-    FastAPI -->|컨텍스트 증강 질의| Gemini["Google Gemini API<br/>(Gemini Flash Lite 계열)"]
-    FastAPI -->|회원/배송지/이관 API| ActionServer["산지 통합 액션 서버"]
-    Gemini -->|추론 완료 응답| FastAPI
-    FastAPI -->|SimpleText 포맷 검증 및 반환| Kakao
-    Kakao -->|말풍선 전달| User
-```
+카카오 응답은 SimpleText 1개, 최대 500자이며 후처리 목표는 480자입니다. 운영 요청의 내부 제한은 4.5초로 설정합니다. 이는 응답 품질이나 실측 지연을 보장하는 수치가 아닙니다. 외부 액션 POST의 `SUBMITTED`는 요청 접수이므로 실제 주소 변경·환불·발행 완료로 안내하지 않습니다.
 
-- **메인 CS 챗봇 엔진**: Python 기반의 고성능 비동기 웹 프레임워크인 FastAPI를 사용합니다.
-- **생성형 AI 모델**: 구글 Gemini API의 Flash Lite 계열(`gemini-3.5-flash-lite` 또는 `gemini-2.0-flash-lite`, 환경 변수 `GEMINI_MODEL`로 지정 가능)을 채택하여 1~2초 이내의 초저지연 추론과 엄격한 프롬프트 지시 준수를 보장합니다.
-- **채널 게이트웨이**: 카카오 i 오픈빌더 스킬 서버 규격을 준수하며, 규정상 허용된 유일한 출력 타입인 `SimpleText` 템플릿만 생성합니다.
-- **산지 액션 서버**: 회원 인증 확인, 배송지 주소 변경, 긴급 상담원 이관(Escalation) 티켓 생성을 처리하는 백엔드 REST API입니다.
+## 실행 및 설정
 
----
+기존 `.env`가 있으면 덮어쓰지 마십시오. 처음 설정할 때만 `.env.example`을 `.env`로 복사하고, `GEMINI_API_KEY`와 대회에서 발급받은 `ACTION_SERVER_TOKEN`을 입력합니다. 비밀값은 Git과 문서에 기록하지 않습니다. 공식 액션 기본 주소는 `https://gyodong-mall-action.aitop100.org`이며, 주소를 설정해도 현재 클라이언트의 계약 차이가 해결되지는 않습니다.
 
-## 3. 대회 심사 5대 평가 지표 및 핵심 가드레일
-
-본 프로젝트는 대회 공식 평가 기준을 충족하고 실격(Disqualification) 위험을 사전에 원천 차단하도록 설계되었습니다.
-
-### 5대 핵심 평가 지표
-- **지식 획득 수 (Knowledge Retrieval)**: 교동마을과 갯마을의 다채널 파편화 지식(50여 개 핵심 규정 및 현장 정책)을 오판 없이 정확하게 반영하는 능력.
-- **p95 응답 속도 (Latency)**: 전체 30개 심사 시나리오 요청 중 상위 95% 구간의 응답 완료 시간이 지연되지 않고 신속하게 처리되는 속도.
-- **평균 말풍선 수 (Bubble Count)**: 질의당 반드시 1개의 말풍선으로 응답을 완결하여 불필요한 메시지 분할을 방지하는 구조.
-- **말풍선당 평균 글자 수 (Character Count)**: 핵심 내용을 누락하지 않으면서 500자 이내의 간결하고 정제된 한국어 문장으로 서술하는 압축력.
-- **케이스 응답 정확도 (Factual Accuracy)**: 서로 다른 두 마을의 분리 배송 정책, 합포장 불가 원칙, 신선식품 보상 규정을 오답 없이 일관되게 안내하는 정확성.
-
-### 즉시 탈락 방지 가드레일
-- **출력 포맷 규격 준수**: 카카오 오픈빌더 응답 시 버튼, 캐러셀, 리스트 카드 등의 복합 UI를 일체 배제하고 오직 `SimpleText` 단일 블록만 반환합니다.
-- **응답 제한 시간 준수**: 대회 규정인 60초 타임아웃을 초과하는 요청이 10건 이상 누적되면 즉시 실격되므로, 에이전트 내부 타임아웃을 45초로 제한하고 즉각 폴백 응답을 제공합니다.
-- **최대 글자 수 엄수**: 500자 초과 출력이 10건 이상 발생 시 실격되므로, 480자 초과 시 문장 단위로 자동 정제하여 잘라내는 후처리 방어 로직을 적용합니다.
-
----
-
-## 4. 디렉터리 구조 및 세부 문서 링크
-
-프로젝트 저장소 내의 세부 기술 규격서 및 가이드는 아래 링크를 통해 확인하실 수 있습니다.
-
-- [AGENTS.md](file:///Users/shootingstar/dev/aitop100/AGENTS.md): 프로젝트 개발 규칙 및 에이전트 운용 원칙 (정책 결정 시 ask_question 확인 원칙, 최신 정보 검증을 위한 웹 검색 지향, 심사 가드레일 엄수).
-- [HANDOFF.md](file:///Users/shootingstar/dev/aitop100/HANDOFF.md): 세션 간 작업 인계 문서 (작업 단위 6단계 분할, 1채팅 1단위 완수 원칙).
-- [docs/SPECIFICATION.md](file:///Users/shootingstar/dev/aitop100/docs/SPECIFICATION.md): 대회 상세 타임라인, 5대 평가 지표 배점 구조, 즉시 탈락 페널티 규정, 심사위원 페르소나 및 30개 시나리오 상세 분석.
-- [docs/KNOWLEDGE_BASE.md](file:///Users/shootingstar/dev/aitop100/docs/KNOWLEDGE_BASE.md): 교동마을(농산물) 및 갯마을(수산물)의 분리 배송 원칙, 합포장 절대 불가 정책, 배송비 및 반품/환불 교환 지침 총람.
-- [docs/API_AND_PROTOCOLS.md](file:///Users/shootingstar/dev/aitop100/docs/API_AND_PROTOCOLS.md): 카카오 오픈빌더 SimpleText 스펙, 회원 본인인증, 주문 배송지 정정, 상담원 인계 티켓 발급 API 및 폴백 명세.
-- [docs/OPERATIONS_AND_TESTING.md](file:///Users/shootingstar/dev/aitop100/docs/OPERATIONS_AND_TESTING.md): 카카오 채널 및 오픈빌더 설정, cloudflared 터널링 가이드, 30개 시나리오 시뮬레이션 하네스 구축 및 무중단 모니터링 수칙.
-- [.env.example](file:///Users/shootingstar/dev/aitop100/.env.example): Gemini API 키 및 포트, 액션 서버 주소 환경 변수 설정 템플릿.
-
----
-
-## 5. 빠른 시작 가이드 (Quick Start)
-
-고속 패키지 관리 도구인 `uv`를 활용하여 가상환경 구축 및 의존성 패키지를 즉시 설정할 수 있습니다.
-
-### 1단계: 환경 변수 설정
-저장소 루트에 위치한 [.env.example](file:///Users/shootingstar/dev/aitop100/.env.example) 파일을 복사하여 `.env` 파일을 생성하고 구글 Gemini API 키를 입력합니다.
+기존 `.venv` 환경에서 실행합니다.
 
 ```bash
-cp .env.example .env
+.venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-`.env` 파일 내부의 `GEMINI_API_KEY` 값에 실제 발급받은 키를 지정합니다.
-
-### 2단계: 가상환경 생성 및 의존성 설치
-`uv`를 사용하여 Python 3.11+ 기반의 격리된 환경을 구성합니다.
+서버는 루트 `.env`를 읽습니다. 위 실행의 수신 주소·포트는 CLI 인자로 지정합니다. `GET /health`로 기동 여부를 확인할 수 있습니다. 스킬 경로는 `POST /skill`이며 `/skill/cs`, `/api/kakao/chat`도 지원합니다. `/health` 성공만으로 Gemini·공식 액션 서버 연결까지 검증되지는 않습니다.
 
 ```bash
-uv venv
-source .venv/bin/activate
-uv pip install fastapi uvicorn google-genai pydantic python-dotenv httpx
+.venv/bin/python -m pytest -q
 ```
 
-### 3단계: 로컬 서버 실행
-FastAPI 애플리케이션을 구동합니다.
+## 문서
 
-```bash
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-```
-
-서버 구동 후 브라우저나 HTTP 클라이언트로 `http://localhost:8000/health` 경로를 호출하여 정상 구동 여부를 확인합니다.
-스킬 엔드포인트 URL은 `http://localhost:8000/api/kakao/chat` 경로로 설정됩니다.
+- [AGENTS.md](AGENTS.md): 개발·정책 결정·핸드오프 규칙.
+- [HANDOFF.md](HANDOFF.md): 현재 구현·검증 상태와 다음 Unit.
+- [정합성 및 미확인 항목](docs/CONSISTENCY_NOTES.md): 역할·정책 문구·대회 세부 규정의 미확인 사항.
+- [API 및 프로토콜](docs/API_AND_PROTOCOLS.md): 공식 업무 API 40개와 초기화 API, 인증·TC 헤더·접수·오류 규약.
+- [액션 API 스키마](docs/ACTION_API_SCHEMAS.md): 요청 필드와 응답 모델 50종.
+- [공개 TC](docs/PUBLIC_TEST_CASES.md): 공식 공개 15건의 질문·상담일·대상·호출 조건.
+- [지식 베이스](docs/KNOWLEDGE_BASE.md), [인터뷰 기록](docs/INTERVIEW_LOGS.md): 정책 원문·현장 자료 요약. 미확인 해석과 사례별 예외를 함께 확인합니다.
+- [대회 규격 확인 상태](docs/SPECIFICATION.md): 확인한 자료와 출처 재확인이 필요한 기존 주장을 구분합니다.
+- [운영 및 검증 계획](docs/OPERATIONS_AND_TESTING.md): 배포 전 확인 사항과 미구현 하네스의 검증 기준.
+- [.env.example](.env.example): 비밀값을 제외한 환경변수 템플릿.

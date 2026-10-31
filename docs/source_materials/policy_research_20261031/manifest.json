@@ -1,0 +1,69 @@
+{
+  "checked_at": "2026-10-31T04:49:30.393Z",
+  "retrieval": "로그인된 Chrome에서 공식 안내·TC 문서 GET 조회. 공개 CDN의 기존 원문 GET 재조회. 업무 API·접수·초기화·제출·관계자 메시지 전송 없음.",
+  "sources": [
+    {
+      "url": "https://aitop100.org/api/contest/content",
+      "http_status": 200,
+      "content_type": "application/json",
+      "file": "contest_content.json",
+      "sha256": "33aefdb2397ad12c7b7279472868586faba1eebc50d862d6dda31ebecfcab06b"
+    },
+    {
+      "url": "https://aitop100.org/api/contest/test-cases/L-20/md",
+      "http_status": 200,
+      "content_type": "text/markdown; charset=utf-8",
+      "file": "L-20.md",
+      "sha256": "d17d3a8dffdd97e38beae2ab9ecd1ba17352b6b6b9e0bf54783f1e4ab3009605"
+    },
+    {
+      "url": "https://aitop100.org/api/contest/test-cases/L-40/md",
+      "http_status": 200,
+      "content_type": "text/markdown; charset=utf-8",
+      "file": "L-40.md",
+      "sha256": "23a8f7d0bf0ba469c8c72d9c921f6e22226157f4bcf6b67df8b4b4f03bb368c3"
+    },
+    {
+      "url": "https://aitop100.org/api/contest/test-cases/L-47/md",
+      "http_status": 200,
+      "content_type": "text/markdown; charset=utf-8",
+      "file": "L-47.md",
+      "sha256": "8194bbbcb06dbc52d8dad2dea9889d0d78305a9d6a7ba954cd3ba0153b15ec32"
+    },
+    {
+      "url": "https://aitop100.org/api/contest/test-cases/L-60/md",
+      "http_status": 200,
+      "content_type": "text/markdown; charset=utf-8",
+      "file": "L-60.md",
+      "sha256": "8a59d6b1582d126842be6f398801f8b64eda94d86ea12d80f0eda28a63a43d19"
+    },
+    {
+      "url": "https://aitop100.org/api/contest/test-cases/Y-24/md",
+      "http_status": 200,
+      "content_type": "text/markdown; charset=utf-8",
+      "file": "Y-24.md",
+      "sha256": "781745b5a56d4ff3b8b78c74c17ff4fc2198a8bba90ea70357a89889036cf1bf"
+    },
+    {
+      "url": "https://aitop100.org/ and https://aitop100.org/contest",
+      "http_status": 200,
+      "file": "public_schedule_and_submit.json",
+      "sha256": "34a22b15013d363089a853be9dcd42ece76957f1330451829f15d73268f49a61",
+      "scope": "공개 홈페이지 일정·FAQ 발췌 및 제출 안내. 사용자 입력값은 수집하지 않음."
+    },
+    {
+      "url": "https://t1.kakaocdn.net/aitop100/aitop100/dist/4d_vVDlhO9Ir9fzafgolCQ.html",
+      "http_status": 200,
+      "file": "../product_detail_pages.html",
+      "sha256": "986a21bddcc845dad2da6dfe24dcb8a3848d4590a951952e88f567f268100794",
+      "matches_existing_bytes": true
+    },
+    {
+      "url": "https://t1.kakaocdn.net/aitop100/aitop100/dist/YpevY-GWzxt65De9PFNL4w.html",
+      "http_status": 200,
+      "file": "../rules.html",
+      "sha256": "f1457de34501559d9972ff628aa657d40edb783f8ccccf5e658a088840683293",
+      "matches_existing_bytes": true
+    }
+  ]
+}
