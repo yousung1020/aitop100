@@ -919,17 +919,18 @@ class AgentOrchestrator:
 
         category_to_use = effective_category or route_result.primary_category
 
-        # 3. LLM 또는 규칙 엔진 호출
+        # 3. LLM 또는 규칙 엔진 호출 (Gemini 호출에 2.5초 엄격 상한을 두어 카카오 5초 탈락 원천 방어)
         generated_text = ""
         if self.gemini_client:
             try:
-                generated_text = await self._call_gemini(
-                    utterance=utterance,
-                    knowledge_text=route_result.knowledge_text,
-                    action_context=action_context,
-                )
+                with anyio.fail_after(2.5):
+                    generated_text = await self._call_gemini(
+                        utterance=utterance,
+                        knowledge_text=route_result.knowledge_text,
+                        action_context=action_context,
+                    )
             except Exception as e:
-                logger.warning(f"Gemini API 호출 실패, 지식 규칙 엔진으로 전환: {e}")
+                logger.warning(f"Gemini API 호출 지연 또는 실패, 고속 지식 규칙 엔진으로 즉시 전환: {e}")
                 generated_text = ""
 
         if not generated_text:
